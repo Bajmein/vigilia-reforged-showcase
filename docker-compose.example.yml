@@ -1,0 +1,106 @@
+version: "3.9"
+
+# Vigilia — Docker Compose Template
+# Sustituir los valores de entorno con las credenciales reales antes de desplegar.
+# Las imágenes privadas requieren autenticación en ghcr.io/bajmein/.
+
+services:
+
+  # ─── Ingestión ─────────────────────────────────────────────────────────────
+  vigilia-ingest:
+    image: ghcr.io/bajmein/vigilia-ingest:latest
+    container_name: vigilia-ingest
+    restart: unless-stopped
+    environment:
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - STREAM_SOURCE_0=rtsp://camera-user:camera-password@camera-host-0:554/stream1
+      - STREAM_SOURCE_1=rtsp://camera-user:camera-password@camera-host-1:554/stream1
+      - INGEST_LOG_LEVEL=INFO
+    networks:
+      - vigilia-net
+    depends_on:
+      - mqtt-broker
+
+  # ─── Análisis GPU ──────────────────────────────────────────────────────────
+  vigilia-analyzer:
+    image: ghcr.io/bajmein/vigilia-analyzer:latest
+    container_name: vigilia-analyzer
+    restart: unless-stopped
+    environment:
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - MODEL_PATH=/models/detector.engine
+      - ANALYZER_LOG_LEVEL=INFO
+    volumes:
+      - ipc-socket:/run/vigilia/ipc
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - vigilia-net
+    depends_on:
+      - mqtt-broker
+
+  # ─── Orquestación / Motor de Reglas ────────────────────────────────────────
+  vigilia-orchestrator:
+    image: ghcr.io/bajmein/vigilia-orchestrator:latest
+    container_name: vigilia-orchestrator
+    restart: unless-stopped
+    environment:
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - CONFIG_PATH=/config/config.yaml
+      - ORCHESTRATOR_LOG_LEVEL=INFO
+    volumes:
+      - ipc-socket:/run/vigilia/ipc:ro
+      - ./config.yaml:/config/config.yaml:ro
+    networks:
+      - vigilia-net
+    depends_on:
+      - vigilia-analyzer
+      - mqtt-broker
+
+  # ─── Mensajería ────────────────────────────────────────────────────────────
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - mqtt-data:/mosquitto/data
+      - mqtt-log:/mosquitto/log
+    networks:
+      - vigilia-net
+
+  # ─── Almacenamiento de Clips ───────────────────────────────────────────────
+  vigilia-storage:
+    image: ghcr.io/bajmein/vigilia-storage:latest
+    container_name: vigilia-storage
+    restart: unless-stopped
+    environment:
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - CLIPS_PATH=/clips
+      - STORAGE_LOG_LEVEL=INFO
+    volumes:
+      - clips-data:/clips
+    networks:
+      - vigilia-net
+    depends_on:
+      - mqtt-broker
+
+networks:
+  vigilia-net:
+    driver: bridge
+
+volumes:
+  ipc-socket:
+  mqtt-data:
+  mqtt-log:
+  clips-data:

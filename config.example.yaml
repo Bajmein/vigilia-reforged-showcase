@@ -1,0 +1,82 @@
+# Vigilia — Configuration Template
+# Todos los valores marcados con <MAYUSCULAS> deben ser reemplazados.
+# Las coordenadas de zona están normalizadas en el rango [0.0, 1.0].
+
+sources:
+  - id: cam-0
+    name: "Entrada principal"
+    url: "rtsp://<USER>:<PASSWORD>@<CAMERA_IP_0>:554/stream1"
+    enabled: true
+    fps_limit: 15
+
+  - id: cam-1
+    name: "Patio trasero"
+    url: "rtsp://<USER>:<PASSWORD>@<CAMERA_IP_1>:554/stream1"
+    enabled: true
+    fps_limit: 10
+
+zones:
+  - id: zona-intrusion
+    name: "intrusion"
+    source_id: cam-0
+    geometry:
+      - [0.1, 0.2]
+      - [0.9, 0.2]
+      - [0.9, 0.85]
+      - [0.1, 0.85]
+
+  - id: zona-cruce
+    name: "crossing"
+    source_id: cam-1
+    direction: "left-to-right"
+    geometry:
+      - [0.3, 0.0]
+      - [0.7, 0.0]
+      - [0.7, 1.0]
+      - [0.3, 1.0]
+
+rules:
+  - id: regla-intrusion-nocturna
+    trigger:
+      zone: zona-intrusion
+      event: person_detected
+      min_confidence: 0.75
+      cooldown_s: 30
+    actions:
+      - type: mqtt_publish
+        topic: vigilia/alerts/intrusion
+        payload_template: "person detected in {{ zone }} at {{ timestamp }}"
+      - type: audio_deterrent
+        sound_file: alarm_01.wav
+      - type: record_clip
+        duration_s: 15
+
+  - id: regla-cruce-diurno
+    trigger:
+      zone: zona-cruce
+      event: line_crossed
+      min_confidence: 0.65
+      cooldown_s: 10
+    actions:
+      - type: mqtt_publish
+        topic: vigilia/alerts/crossing
+        payload_template: "crossing detected in {{ zone }} at {{ timestamp }}"
+      - type: record_clip
+        duration_s: 10
+
+vms:
+  enabled: false
+  endpoint: "https://<VMS_HOST>:<VMS_PORT>/api/v1"
+  credentials:
+    username: "<VMS_USER>"
+    password: "<VMS_PASSWORD>"
+
+storage:
+  clips_path: /clips
+  retention_days: 30
+  max_disk_gb: 50
+
+remote_access:
+  enabled: false
+  tailscale_hostname: "<TAILSCALE_DEVICE_HOSTNAME>"
+  whep_port: 8889
