@@ -23,6 +23,8 @@ services:
       - mqtt-broker
 
   # ─── Análisis GPU ──────────────────────────────────────────────────────────
+  # High-performance Rust binary — Motor de Inferencia y Procesamiento de Tensores
+  # escritos en Rust para operaciones zero-copy y bypass del GIL de Python.
   vigilia-analyzer:
     image: ghcr.io/bajmein/vigilia-analyzer:latest
     container_name: vigilia-analyzer

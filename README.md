@@ -14,42 +14,51 @@ Sistema de análisis de video en tiempo real con detección de eventos, toma de 
 ```mermaid
 flowchart LR
     subgraph Ingestión
-        A[Cámaras RTSP] --> B[vigilia-ingest]
+        A[Cámaras RTSP] --> B[vigilia-ingest\nPython · GStreamer]
         B --> C[MQTT Broker]
     end
 
-    subgraph Análisis GPU
-        C --> D[vigilia-analyzer]
-        D -->|frames + metadata| E[IPC Socket]
+    subgraph Análisis_GPU["Análisis GPU · Rust-powered core"]
+        C --> D[vigilia-analyzer\n🦀 Rust — Motor de Inferencia]
+        D -->|tensores zero-copy| E[vigilia-tensor-proc\n🦀 Rust — Procesamiento de Tensores]
+        E -->|frames + metadata| F[IPC Socket]
     end
 
-    subgraph Decisión Python
-        E --> F[vigilia-orchestrator]
-        F -->|eventos clasificados| G{Motor de Reglas}
-        G -->|umbral superado| H[Acción]
+    subgraph Decisión_Python["Decisión · Python"]
+        F --> G[vigilia-orchestrator\nPython asyncio]
+        G -->|eventos clasificados| H{Motor de Reglas}
+        H -->|umbral superado| I[Acción]
     end
 
     subgraph Acción
-        H --> I[MQTT Publish]
-        H --> J[Audio Disuasorio]
-        H --> K[Grabación de Clip]
-        H --> L[VMS / Almacenamiento]
+        I --> J[MQTT Publish]
+        I --> K[Audio Disuasorio]
+        I --> L[Grabación de Clip]
+        I --> M[VMS / Almacenamiento]
     end
 ```
 
 ---
 
-## Stack
+## Stack Tecnológico — Arquitectura Híbrida Python/Rust
 
 | Capa | Tecnología | Rol |
 |------|-----------|-----|
-| Ingestión | GStreamer + Python | Captura de streams RTSP y decodificación |
-| Análisis | CUDA + TensorRT | Inferencia en GPU (detección de objetos/personas) |
+| **Motor de Inferencia** | **Rust** | Inferencia GPU con seguridad de memoria en tiempo de compilación — Memory-safe video processing |
+| **Procesamiento de Tensores** | **Rust** | Operaciones zero-copy sobre buffers de frames — bypass del GIL, rendimiento determinista |
+| Ingestión | GStreamer + Python | Captura de streams RTSP y decodificación inicial |
+| Análisis GPU | CUDA + TensorRT | Pipeline de detección acelerado por hardware |
 | Mensajería | Eclipse Mosquitto | Bus MQTT inter-servicio |
-| Orquestación | Python (asyncio) | Motor de reglas y toma de decisiones |
+| Orquestación | Python (asyncio) | Motor de reglas, configuración y toma de decisiones |
 | Infraestructura | Docker Compose | Despliegue multi-servicio con soporte GPU |
 | Almacenamiento | Volúmenes Docker | Retención de clips y logs de eventos |
 | Acceso remoto | Tailscale + WHEP | Acceso seguro a streams y panel de control |
+
+### Por qué Rust en el núcleo
+
+- **Zero-copy operations**: los tensores de video (~6 MB/frame) viajan de cámara a GPU sin una sola copia en memoria — los módulos Rust trabajan directamente sobre buffers compartidos.
+- **Bypass del GIL de Python**: el Motor de Inferencia y el Procesador de Tensores corren en threads nativos de OS, sin el Global Interpreter Lock. Paralelismo real.
+- **Rendimiento determinista**: sin garbage collector. La latencia de ingestión a decisión es predecible bajo carga sostenida — crítico para respuesta a eventos de seguridad.
 
 ---
 
