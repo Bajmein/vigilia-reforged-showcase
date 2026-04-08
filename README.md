@@ -3,7 +3,7 @@
 > El sistema Vigilia es desarrollado de forma privada por [@Bajmein](https://github.com/Bajmein).
 > Lo que encontrarás aquí: documentación técnica del pipeline, plantillas de infraestructura y el diagrama del sistema.
 
-# Vigilia
+# Vigilia Reforged
 
 Sistema de análisis de video en tiempo real con detección de eventos, toma de decisiones autónoma y respuesta configurada. Diseñado para entornos con restricciones de latencia y privacidad.
 
@@ -13,28 +13,30 @@ Sistema de análisis de video en tiempo real con detección de eventos, toma de 
 
 ```mermaid
 flowchart LR
-    subgraph Ingestión
-        A[Cámaras RTSP] --> B[vigilia-ingest\nPython · GStreamer]
-        B --> C[MQTT Broker]
+    subgraph Ingestión["Ingestión — Hardware GPU"]
+        A[Cámaras RTSP] --> B["vigilia-nvdec\n🦀 Rust — NVDEC Decoder\nPTX Color Convert"]
     end
 
-    subgraph Análisis_GPU["Análisis GPU · Rust-powered core"]
-        C --> D[vigilia-analyzer\n🦀 Rust — Motor de Inferencia]
-        D -->|tensores zero-copy| E[vigilia-tensor-proc\n🦀 Rust — Procesamiento de Tensores]
-        E -->|frames + metadata| F[IPC Socket]
+    subgraph IPC["IPC Bus — Iceoryx2 Zero-Copy"]
+        B -->|"192-byte ABI\nshared memory"| C["vigilia-ipc\n🦀 Rust — IPC Bus\nVRAM Watchdog"]
     end
 
-    subgraph Decisión_Python["Decisión · Python"]
-        F --> G[vigilia-orchestrator\nPython asyncio]
-        G -->|eventos clasificados| H{Motor de Reglas}
-        H -->|umbral superado| I[Acción]
+    subgraph Control["Control — RPC"]
+        C --> D["vision_core\n🦀 Rust — RPC Server\nCommand Handler"]
     end
 
-    subgraph Acción
-        I --> J[MQTT Publish]
-        I --> K[Audio Disuasorio]
-        I --> L[Grabación de Clip]
-        I --> M[VMS / Almacenamiento]
+    subgraph Orquestación["Orquestación — Python"]
+        D --> E["Python Orchestrator\nasyncio + Pydantic"]
+        C --> E
+        E --> F{"Motor de Reglas\nPriorityQueue"}
+        F -->|umbral superado| G[Acción]
+    end
+
+    subgraph Salida["Salida"]
+        G --> H["NvEnc Recording\nGPU Encode"]
+        G --> I["ONVIF Profile M\nMQTT Export"]
+        G --> J["Tailscale + WHEP\nRemote Access"]
+        G --> K["PySide6 Desktop\nCUDA-GL PBO Bridge"]
     end
 ```
 
@@ -43,22 +45,26 @@ flowchart LR
 ## Stack Tecnológico — Arquitectura Híbrida Python/Rust
 
 | Capa | Tecnología | Rol |
-|------|-----------|-----|
-| **Motor de Inferencia** | **Rust** | Inferencia GPU con seguridad de memoria en tiempo de compilación — Memory-safe video processing |
-| **Procesamiento de Tensores** | **Rust** | Operaciones zero-copy sobre buffers de frames — bypass del GIL, rendimiento determinista |
-| Ingestión | GStreamer + Python | Captura de streams RTSP y decodificación inicial |
-| Análisis GPU | CUDA + TensorRT | Pipeline de detección acelerado por hardware |
-| Mensajería | Eclipse Mosquitto | Bus MQTT inter-servicio |
-| Orquestación | Python (asyncio) | Motor de reglas, configuración y toma de decisiones |
-| Infraestructura | Docker Compose | Despliegue multi-servicio con soporte GPU |
-| Almacenamiento | Volúmenes Docker | Retención de clips y logs de eventos |
-| Acceso remoto | Tailscale + WHEP | Acceso seguro a streams y panel de control |
+|---|---|---|
+| **Decodificación** | **Rust + NVDEC** | Hardware video decode en GPU + PTX color conversion (NV12→RGB_F32, BT.601) |
+| **IPC Bus** | **Rust + Iceoryx2** | Zero-copy shared memory IPC — 192-byte `GpuBufferDescriptor` ABI, lock-free queues |
+| **VRAM Lifecycle** | **Rust + CUDA** | Watchdog de buffers GPU — gestión determinista sin GC |
+| **RPC Control** | **Rust + Iceoryx2** | Reactive RPC server para comandos al pipeline |
+| Grabación GPU | Python + NvEnc/CUDA | Hardware encode asíncrono con CUDA event sync |
+| Orquestación | Python asyncio + Pydantic | Motor de reglas, PriorityQueue para preemption de alarmas |
+| Integración VMS | ONVIF Profile M + MQTT | Export de metadata analítica hacia sistemas externos |
+| Acceso remoto | Tailscale + WebRTC/WHEP | Streaming seguro P2P sin exposición de puertos |
+| Desktop viewer | PySide6 + CUDA-GL | Visualización con bridge CUDA→OpenGL PBO, latency tracking |
 
 ### Por qué Rust en el núcleo
 
 - **Zero-copy operations**: los tensores de video (~6 MB/frame) viajan de cámara a GPU sin una sola copia en memoria — los módulos Rust trabajan directamente sobre buffers compartidos.
 - **Bypass del GIL de Python**: el Motor de Inferencia y el Procesador de Tensores corren en threads nativos de OS, sin el Global Interpreter Lock. Paralelismo real.
 - **Rendimiento determinista**: sin garbage collector. La latencia de ingestión a decisión es predecible bajo carga sostenida — crítico para respuesta a eventos de seguridad.
+
+- **Iceoryx2 como IPC**: Los tres crates Rust comparten memoria directamente vía Iceoryx2 — un sistema IPC lock-free basado en shared memory. Elimina la serialización, el round-trip al broker y la copia de datos entre procesos. Los frames de video (~6 MB) se transfieren con un descriptor de 192 bytes.
+- **NVDEC pipeline end-to-end en GPU**: El frame entra al pipeline desde la cámara y no toca RAM del sistema hasta que el orquestador Python lo necesita. NVDEC decodifica en VRAM; PTX kernels convierten el espacio de color en-device; Iceoryx2 transfiere el descriptor (no el frame) al siguiente stage.
+- **VRAM watchdog pattern**: La gestión de buffers GPU consulta el estado del hardware antes de liberar memoria — garantía de seguridad sin mutexes ni reference counting en hot paths.
 
 ---
 
@@ -95,6 +101,11 @@ El sistema se encuentra en fase de producción controlada. Las siguientes capaci
 - Acceso remoto via Tailscale
 
 ---
+
+## Soporte y Contacto
+
+- Alertas del sistema: alertas@vigilia-security.tech
+- Contacto técnico: [kenno@vigilia-security.tech](mailto:kenno@vigilia-security.tech)
 
 ## Licencia
 
