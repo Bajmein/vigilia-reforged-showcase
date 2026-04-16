@@ -105,7 +105,7 @@ docker compose logs -f vigilia-analyzer
 
 ## Estado
 
-**Versión:** `v0.8.1`
+**Versión:** `v0.13.0`
 
 El sistema se encuentra en fase de pruebas operativas. Las siguientes capacidades están integradas:
 
