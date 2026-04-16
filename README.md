@@ -116,9 +116,9 @@ El sistema se encuentra en fase de pruebas operativas. Las siguientes capacidade
 
 ---
 
-## Soporte y Contacto
+## Contacto
 
-- Contacto técnico: [kenno@vigilia-security.tech](mailto:kenno@vigilia-security.tech)
+[kenno@vigilia-security.tech](mailto:kenno@vigilia-security.tech)
 
 ## Licencia
 
