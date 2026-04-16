@@ -80,3 +80,11 @@ remote_access:
   enabled: false
   tailscale_hostname: "<TAILSCALE_DEVICE_HOSTNAME>"
   whep_port: 8889
+
+notifications:
+  smtp:
+    sender: alertas@vigilia-security.tech
+    host: "<SMTP_HOST>"
+    port: 587
+    # auth: configurar según entorno (variable de entorno recomendada)
+  support_contact: kenno@vigilia-security.tech

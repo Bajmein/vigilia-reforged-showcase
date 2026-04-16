@@ -5,7 +5,26 @@
 
 # Vigilia Reforged
 
-Sistema de análisis de video en tiempo real con detección de eventos, toma de decisiones autónoma y respuesta configurada. Diseñado para entornos con restricciones de latencia y privacidad.
+![Banner](assets/brand_banner_website_wide.png)
+
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python)
+![Rust](https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust)
+![WebRTC](https://img.shields.io/badge/WebRTC-000000?style=flat-square&logo=webrtc)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite)
+
+> [!IMPORTANT]
+> Este repositorio es una **exhibición de arquitectura** — no contiene código fuente.
+> Lo que encontrarás aquí: documentación técnica del pipeline, plantillas de infraestructura y el diagrama del sistema.
+
+Sistema de análisis de video en tiempo real con detección de eventos y toma de decisiones, diseñado para entornos que requieren baja latencia y alta privacidad.
+
+---
+
+## Acerca del Proyecto
+
+Vigilia Reforged es un proyecto experimental para el análisis de video autónomo. El objetivo es crear un sistema capaz de detectar eventos relevantes y reaccionar ante ellos de forma eficiente, ejecutándose en local para garantizar la privacidad de los datos.
+
+Este documento detalla la estructura técnica del pipeline y la forma en que los distintos componentes colaboran para lograr una respuesta rápida y confiable.
 
 ---
 
@@ -46,25 +65,23 @@ flowchart LR
 
 | Capa | Tecnología | Rol |
 |---|---|---|
-| **Decodificación** | **Rust + NVDEC** | Hardware video decode en GPU + PTX color conversion (NV12→RGB_F32, BT.601) |
-| **IPC Bus** | **Rust + Iceoryx2** | Zero-copy shared memory IPC — 192-byte `GpuBufferDescriptor` ABI, lock-free queues |
-| **VRAM Lifecycle** | **Rust + CUDA** | Watchdog de buffers GPU — gestión determinista sin GC |
-| **RPC Control** | **Rust + Iceoryx2** | Reactive RPC server para comandos al pipeline |
-| Grabación GPU | Python + NvEnc/CUDA | Hardware encode asíncrono con CUDA event sync |
-| Orquestación | Python asyncio + Pydantic | Motor de reglas, PriorityQueue para preemption de alarmas |
-| Integración VMS | ONVIF Profile M + MQTT | Export de metadata analítica hacia sistemas externos |
-| Acceso remoto | Tailscale + WebRTC/WHEP | Streaming seguro P2P sin exposición de puertos |
-| Desktop viewer | PySide6 + CUDA-GL | Visualización con bridge CUDA→OpenGL PBO, latency tracking |
+| **Decodificación** | **Rust + NVDEC** | Hardware video decode en GPU |
+| **IPC Bus** | **Rust + Iceoryx2** | Transporte eficiente de frames entre módulos |
+| **VRAM Lifecycle** | **Rust + CUDA** | Gestión de memoria en GPU |
+| **RPC Control** | **Rust + Iceoryx2** | Comunicación entre componentes |
+| Grabación GPU | Python + NvEnc/CUDA | Hardware encode asíncrono |
+| Orquestación | Python asyncio + Pydantic | Motor de reglas, preemption de alarmas |
+| Integración VMS | ONVIF Profile M + MQTT | Export de metadata |
+| Acceso remoto | Tailscale + WebRTC/WHEP | Streaming seguro P2P |
+| Desktop viewer | PySide6 + CUDA-GL | Visualización |
 
-### Por qué Rust en el núcleo
+### Tecnologías Clave
 
-- **Zero-copy operations**: los tensores de video (~6 MB/frame) viajan de cámara a GPU sin una sola copia en memoria — los módulos Rust trabajan directamente sobre buffers compartidos.
-- **Bypass del GIL de Python**: el Motor de Inferencia y el Procesador de Tensores corren en threads nativos de OS, sin el Global Interpreter Lock. Paralelismo real.
-- **Rendimiento determinista**: sin garbage collector. La latencia de ingestión a decisión es predecible bajo carga sostenida — crítico para respuesta a eventos de seguridad.
+Este proyecto utiliza una combinación de Python y Rust:
+- **Rust** para el procesamiento de alta intensidad y la comunicación eficiente entre componentes.
+- **Python** para la orquestación, gestión de reglas y tareas de más alto nivel, facilitando la configuración y el mantenimiento.
 
-- **Iceoryx2 como IPC**: Los tres crates Rust comparten memoria directamente vía Iceoryx2 — un sistema IPC lock-free basado en shared memory. Elimina la serialización, el round-trip al broker y la copia de datos entre procesos. Los frames de video (~6 MB) se transfieren con un descriptor de 192 bytes.
-- **NVDEC pipeline end-to-end en GPU**: El frame entra al pipeline desde la cámara y no toca RAM del sistema hasta que el orquestador Python lo necesita. NVDEC decodifica en VRAM; PTX kernels convierten el espacio de color en-device; Iceoryx2 transfiere el descriptor (no el frame) al siguiente stage.
-- **VRAM watchdog pattern**: La gestión de buffers GPU consulta el estado del hardware antes de liberar memoria — garantía de seguridad sin mutexes ni reference counting en hot paths.
+La arquitectura busca separar la potencia de procesamiento de la lógica de negocio, logrando un sistema balanceado.
 
 ---
 
@@ -76,9 +93,6 @@ flowchart LR
 # Copiar plantillas de configuración
 cp docker-compose.example.yml docker-compose.yml
 cp config.example.yaml config.yaml
-
-# Editar credenciales y parámetros (ver comentarios en cada archivo)
-# ...
 
 # Levantar los servicios
 docker compose up -d
@@ -93,10 +107,10 @@ docker compose logs -f vigilia-analyzer
 
 **Versión:** `v0.8.1`
 
-El sistema se encuentra en fase de producción controlada. Las siguientes capacidades están operativas:
+El sistema se encuentra en fase de pruebas operativas. Las siguientes capacidades están integradas:
 
-- Pipeline de detección en tiempo real con GPU
-- Motor de reglas configurable por zona
+- Pipeline de detección en tiempo real
+- Motor de reglas configurable
 - Integración con VMS externos
 - Acceso remoto via Tailscale
 
