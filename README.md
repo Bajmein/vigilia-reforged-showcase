@@ -118,7 +118,6 @@ El sistema se encuentra en fase de pruebas operativas. Las siguientes capacidade
 
 ## Soporte y Contacto
 
-- Alertas del sistema: alertas@vigilia-security.tech
 - Contacto técnico: [kenno@vigilia-security.tech](mailto:kenno@vigilia-security.tech)
 
 ## Licencia
